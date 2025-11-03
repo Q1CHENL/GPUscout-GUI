@@ -472,12 +472,19 @@ export class GPUscoutResult {
                 }
 
                 if (isLabel) {
-                    lastLineBranch = line.substring(0, line.length - 1);
+                    // Normalize label token
+                    lastLineBranch = line.substring(0, line.length - 1).trim();
                 } else if (lastLineBranch !== '') {
                     // Update address of branch entry if this is the first instruction after it -> Branch entry should have the same address as the first line after it
-                    this._ptxCodeLines[currentKernel].find(
-                        (line) => line.tokens.includes(lastLineBranch) && line.address === -1
-                    ).address = currentPtxLine;
+                    const branchEntry = this._ptxCodeLines[currentKernel].find(
+                        (entry) =>
+                            entry.address === -1 &&
+                            Array.isArray(entry.tokens) &&
+                            entry.tokens.some((t) => (typeof t === 'string' ? t.trim() : t) === lastLineBranch)
+                    );
+                    if (branchEntry) {
+                        branchEntry.address = currentPtxLine;
+                    }
                     lastLineBranch = '';
                 }
 
@@ -485,7 +492,9 @@ export class GPUscoutResult {
                     address: isLabel ? -1 : currentPtxLine,
                     tokens: line
                         .slice(0, -1)
+                        .trim()
                         .split(/([+-, :;.[\]])/)
+                        .map((token) => (typeof token === 'string' ? token.trim() : token))
                         .filter((token) => token.length > 0)
                 });
 
