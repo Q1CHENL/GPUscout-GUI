@@ -19,6 +19,14 @@ export class GPUscoutResult {
     constructor(resultData, topologyData) {
         const resultJSON = JSON.parse(resultData);
 
+        // Normalize optional sections to avoid undefined access
+        if (!resultJSON.stalls || typeof resultJSON.stalls !== 'object') {
+            resultJSON.stalls = {};
+        }
+        if (!resultJSON.source_files || typeof resultJSON.source_files !== 'object') {
+            resultJSON.source_files = {};
+        }
+
         /**
          * An object containing all analyses by kernel and analysis name
          * @type {Object.<String, Object.<String, Analysis>>}
@@ -85,6 +93,11 @@ export class GPUscoutResult {
 
         this._mainSourceFileName = {};
         this._sourceFileNames = {};
+
+        // Ensure stalls arrays exist per kernel
+        for (const kernel of Object.keys(resultJSON.kernels)) {
+            if (!Array.isArray(resultJSON.stalls[kernel])) resultJSON.stalls[kernel] = [];
+        }
 
         // Add not issued stalls to issued stalls (I know this looks horrible)
         for (const kernel of Object.keys(resultJSON.kernels)) {
