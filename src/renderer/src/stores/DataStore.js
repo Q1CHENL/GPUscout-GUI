@@ -67,7 +67,16 @@ export const useDataStore = defineStore('data', () => {
             alert(
                 'An error occurred while parsing the input files. Please make sure no errors occurred during their generation.'
             );
-            window.location.reload();
+            // Write the error into a local file log
+            const logData = { error: e.message, stack: e.stack };
+            const logBlob = new Blob([JSON.stringify(logData, null, 2)], { type: 'application/json' });
+            const logUrl = URL.createObjectURL(logBlob);
+            const logLink = document.createElement('a');
+            logLink.href = logUrl;
+            logLink.download = 'gpuscout_error_log.json';
+            document.body.appendChild(logLink);
+            logLink.click();
+            document.body.removeChild(logLink);
             return;
         }
 
