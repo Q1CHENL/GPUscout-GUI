@@ -652,7 +652,9 @@ export class GPUscoutResult {
         for (const kernel of this._kernels) {
             // Get relevant lines for this kernel by source files
             let relevantLines = Object.groupBy(
-                Object.values(this._sassToSourceLines[kernel]).concat(Object.values(this._ptxToSourceLines[kernel])),
+                Object.values(this._sassToSourceLines[kernel])
+                    .concat(Object.values(this._ptxToSourceLines[kernel]))
+                    .filter(({ file }) => file),
                 ({ file }) => file
             );
             let relevantStalls = stalls[Object.entries(kernelMapping).find(([, v]) => v === kernel)[0]] || [];
@@ -685,7 +687,11 @@ export class GPUscoutResult {
                 // The new line numbers dont match the old ones, save the mapping
                 oldToNewLineNumbers[sourceFile] = {};
 
-                // Add lines
+                // Add lines (skip if source file content wasn't embedded)
+                if (!sourceFileContents[sourceFile]) {
+                    console.warn(`[GPUscout] Missing source file: ${sourceFile}`);
+                    continue;
+                }
                 for (let i = 1; i <= sourceFileContents[sourceFile].length; i++) {
                     oldToNewLineNumbers[sourceFile][i] = fileLineNumber;
                     // Aggregate the stalls for this line
@@ -720,38 +726,66 @@ export class GPUscoutResult {
             // Apply the new line number mapping to all the objects
 
             for (const key of Object.keys(this._sassToSourceLines[kernel])) {
-                this._sassToSourceLines[kernel][key] = [
-                    this._sassToSourceLines[kernel][key]['file'],
-                    oldToNewLineNumbers[this._sassToSourceLines[kernel][key]['file']][
-                        this._sassToSourceLines[kernel][key]['line']
-                    ]
-                ];
+                const entry = this._sassToSourceLines[kernel][key];
+                const file = entry['file'];
+                const line = entry['line'];
+                if (!file || !oldToNewLineNumbers[file]) {
+                    console.warn(`[GPUscout] Skipping unmapped SASS line for kernel ${kernel}, file=${file}`);
+                    continue;
+                }
+                this._sassToSourceLines[kernel][key] = [file, oldToNewLineNumbers[file][line] ?? null];
             }
             for (const key of Object.keys(this._ptxToSourceLines[kernel])) {
-                this._ptxToSourceLines[kernel][key] = [
-                    this._ptxToSourceLines[kernel][key]['file'],
-                    oldToNewLineNumbers[this._ptxToSourceLines[kernel][key]['file']][
-                        this._ptxToSourceLines[kernel][key]['line']
-                    ]
-                ];
+                const entry = this._ptxToSourceLines[kernel][key];
+                const file = entry['file'];
+                const line = entry['line'];
+                if (!file || !oldToNewLineNumbers[file]) {
+                    console.warn(`[GPUscout] Skipping unmapped PTX line for kernel ${kernel}, file=${file}`);
+                    continue;
+                }
+                this._ptxToSourceLines[kernel][key] = [file, oldToNewLineNumbers[file][line] ?? null];
             }
             this._sourceToSassLines[kernel] = {};
             for (const [sassLine, key] of Object.entries(this._sassToSourceLines[kernel])) {
-                if (!this._sourceToSassLines[kernel][key[0]]) this._sourceToSassLines[kernel][key[0]] = {};
-                if (!this._sourceToSassLines[kernel][key[0]][key[1]]) this._sourceToSassLines[kernel][key[0]][key[1]] = [];
+                const file = key?.[0];
+                const addr = key?.[1];
+                if (!file || addr == null) {
+                    console.warn(`[GPUscout] Skipping invalid SASS mapping entry for kernel ${kernel}:`, key);
+                    continue;
+                }
+                if (!this._sourceToSassLines[kernel][file]) this._sourceToSassLines[kernel][file] = {};
+                if (!this._sourceToSassLines[kernel][file][addr]) this._sourceToSassLines[kernel][file][addr] = [];
 
-                this._sourceToSassLines[kernel][key[0]][key[1]].push(sassLine);
-                this._sourceCodeLines[kernel].find((l) => l.fileName === key[0] && l.address === key[1]).hasSassMapping =
-                    true;
+                this._sourceToSassLines[kernel][file][addr].push(sassLine);
+                const targetLine = this._sourceCodeLines[kernel].find((l) => l.fileName === file && l.address === addr);
+                if (targetLine) {
+                    targetLine.hasSassMapping = true;
+                } else {
+                    console.warn(
+                        `[GPUscout] Missing source line for SASS mapping in kernel ${kernel}: file=${file}, addr=${addr}`
+                    );
+                }
             }
             this._sourceToPtxLines[kernel] = {};
             for (const [ptxLine, key] of Object.entries(this._ptxToSourceLines[kernel])) {
-                if (!this._sourceToPtxLines[kernel][key[0]]) [(this._sourceToPtxLines[kernel][key[0]] = {})];
-                if (!this._sourceToPtxLines[kernel][key[0]][key[1]]) this._sourceToPtxLines[kernel][key[0]][key[1]] = [];
+                const file = key?.[0];
+                const addr = key?.[1];
+                if (!file || addr == null) {
+                    console.warn(`[GPUscout] Skipping invalid PTX mapping entry for kernel ${kernel}:`, key);
+                    continue;
+                }
+                if (!this._sourceToPtxLines[kernel][file]) this._sourceToPtxLines[kernel][file] = {};
+                if (!this._sourceToPtxLines[kernel][file][addr]) this._sourceToPtxLines[kernel][file][addr] = [];
 
-                this._sourceToPtxLines[kernel][key[0]][key[1]].push(ptxLine);
-                this._sourceCodeLines[kernel].find((l) => l.fileName === key[0] && l.address === key[1]).hasPtxMapping =
-                    true;
+                this._sourceToPtxLines[kernel][file][addr].push(ptxLine);
+                const targetLine = this._sourceCodeLines[kernel].find((l) => l.fileName === file && l.address === addr);
+                if (targetLine) {
+                    targetLine.hasPtxMapping = true;
+                } else {
+                    console.warn(
+                        `[GPUscout] Missing source line for PTX mapping in kernel ${kernel}: file=${file}, addr=${addr}`
+                    );
+                }
             }
         }
     }
